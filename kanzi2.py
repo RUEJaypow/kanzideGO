@@ -1,32 +1,14 @@
-import pygame
-import sys
+import tkinter as tk
+from tkinter import font as tkfont
 
 # --- ゲーム設定 ---
-SCREEN_WIDTH = 512  # Pygameは高解像度も扱えるため少し大きめに設定
-SCREEN_HEIGHT = 448
-GAME_TITLE = "Pygame ハイブリッドクイズ"
-FONT_FILE = "misaki_gothic.ttf"
-FONT_SIZE_M = 32  # フォントサイズを定義
-FONT_SIZE_L = 40
-FONT_SIZE_S = 24
+GAME_TITLE = "Tkinter ハイブリッドクイズ"
+FONT_FAMILY = "Yu Gothic UI"
+FONT_SIZE_S = 12
+FONT_SIZE_M = 16
+FONT_SIZE_L = 24
 
-# --- 色の定義 (R, G, B) ---
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-RED = (255, 100, 100)
-YELLOW = (255, 255, 100)
-DARK_BLUE = (20, 20, 80)
-GREEN_BG = (50, 150, 100)
-PURPLE_HIGHLIGHT = (120, 100, 180)
-
-
-# --- シーン管理用の定数 ---
-SCENE_TITLE = 0
-SCENE_QUIZ = 1
-SCENE_INPUT = 2
-SCENE_RESULT = 3
-
-# --- クイズデータ ---
+# --- クイズデータ (変更なし) ---
 QUIZ_DATA = [
     {
         "type": "choice",
@@ -36,177 +18,194 @@ QUIZ_DATA = [
     },
     {
         "type": "fill_in",
-        "question": ["for i in □(5):", "  print(i)", "# 0から4まで表示させたい", "# □に入る単語は？"],
-        "answer": "range",
+        "question": "Pythonでリストの要素数を取得する関数は len() ですが、文字列の長さを取得する場合も同じ関数を使います。この関数 len は何の略でしょう？",
+        "answer": "length",
     },
     {
         "type": "choice",
-        "question": "ことわざ「猫に○○」",
+        "question": "ことわざ「猫に○○」\n○○に入るのは？",
         "choices": ["1. かつおぶし", "2. またたび", "3. こばん"],
         "correct_choice_index": 2,
     },
 ]
 
-class Game:
-    def __init__(self):
-        pygame.init()
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption(GAME_TITLE)
-        self.clock = pygame.time.Clock()
+class QuizApp(tk.Tk):
+    """アプリケーション全体を管理するメインクラス"""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-        # フォントオブジェクトの作成
-        self.font_m = pygame.font.Font(FONT_FILE, FONT_SIZE_M)
-        self.font_l = pygame.font.Font(FONT_FILE, FONT_SIZE_L)
-        self.font_s = pygame.font.Font(FONT_FILE, FONT_SIZE_S)
+        self.title(GAME_TITLE)
+        self.geometry("600x400") # ウィンドウサイズを少し拡大
+        self.minsize(500, 350) # 最小サイズを指定
 
-        # 変数の初期化
-        self.scene = SCENE_TITLE
+        # フォントオブジェクトを定義
+        self.title_font = tkfont.Font(family=FONT_FAMILY, size=FONT_SIZE_L, weight="bold")
+        self.question_font = tkfont.Font(family=FONT_FAMILY, size=FONT_SIZE_M)
+        self.result_font = tkfont.Font(family=FONT_FAMILY, size=FONT_SIZE_L, weight="bold")
+        self.default_font = tkfont.Font(family=FONT_FAMILY, size=FONT_SIZE_M)
+
+        # クイズの状態を管理
         self.current_quiz_index = 0
-        self.player_choice = -1
-        self.player_answer = ""
-        self.is_correct = False
+        self.wrong_answer_count = 0 # 間違えた問題数を記録
 
-    def run(self):
-        """Pygameのメインループ"""
-        while True:
-            self.handle_events()
-            self.update()
-            self.draw()
-            pygame.display.flip()  # 画面全体を更新
-            self.clock.tick(60)    # FPSを60に固定
+        self._frame = None
+        self.switch_frame("TitleFrame")
 
-    def handle_events(self):
-        """イベント処理 (キー入力、マウス操作など)"""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
+    def switch_frame(self, frame_class_name, **kwargs):
+        """指定された名前のフレームに切り替える"""
+        if self._frame:
+            self._frame.destroy()
+        
+        FrameClass = globals()[frame_class_name]
+        self._frame = FrameClass(master=self, controller=self, **kwargs)
+        # gridを使用してウィンドウサイズ変更に追従させる
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self._frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+
+    def next_question(self):
+        """次の問題に進むか、最終結果を表示する"""
+        self.current_quiz_index += 1
+        if self.current_quiz_index < len(QUIZ_DATA):
+            self.switch_frame("QuizFrame")
+        else:
+            self.switch_frame("FinalResultFrame")
             
-            # --- マウス入力 ---
-            if self.scene == SCENE_TITLE and event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1: # 左クリック
-                    self.scene = SCENE_QUIZ
-
-            # --- キーボード入力 ---
-            if event.type == pygame.KEYDOWN:
-                quiz = QUIZ_DATA[self.current_quiz_index]
-                if self.scene == SCENE_QUIZ:
-                    if quiz["type"] == "choice":
-                        if event.key == pygame.K_1: self.check_choice_answer(0)
-                        if event.key == pygame.K_2: self.check_choice_answer(1)
-                        if event.key == pygame.K_3: self.check_choice_answer(2)
-                    elif quiz["type"] == "fill_in":
-                        if event.key == pygame.K_RETURN:
-                            self.player_answer = ""
-                            self.scene = SCENE_INPUT
-                elif self.scene == SCENE_INPUT:
-                    if event.key == pygame.K_RETURN:
-                        self.check_fill_in_answer()
-                    elif event.key == pygame.K_BACKSPACE:
-                        self.player_answer = self.player_answer[:-1]
-                    else:
-                        self.player_answer += event.unicode # 押された文字をそのまま追加
-                elif self.scene == SCENE_RESULT:
-                    if event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
-                        self.current_quiz_index = (self.current_quiz_index + 1) % len(QUIZ_DATA)
-                        self.scene = SCENE_QUIZ
+    def record_wrong_answer(self):
+        """不正解の数をカウント"""
+        self.wrong_answer_count += 1
 
 
-    def update(self):
-        """ゲームの状態更新（今回はイベント処理に統合）"""
-        pass
-
-    def draw(self):
-        """描画処理"""
-        if self.scene == SCENE_TITLE:
-            self.draw_title_scene()
-        else:
-            quiz = QUIZ_DATA[self.current_quiz_index]
-            self.draw_quiz_base(quiz) # 共通の背景と問題文を描画
-
-            if self.scene == SCENE_QUIZ:
-                if quiz["type"] == "choice":
-                    self.draw_choices(quiz)
-                else: # fill_in
-                    self.draw_text_centered("エンターキーで入力", self.font_s, WHITE, SCREEN_HEIGHT - 60)
-            elif self.scene == SCENE_INPUT:
-                self.draw_input_field()
-            elif self.scene == SCENE_RESULT:
-                if quiz["type"] == "choice":
-                    self.draw_choices(quiz, highlight=True)
-                else: # fill_in
-                    self.draw_input_field(show_cursor=False)
-                self.draw_result_message(quiz)
-
-    # --- ヘルパー関数 (描画) ---
-    def draw_text(self, text, font, color, x, y):
-        """指定座標にテキストを描画"""
-        text_surface = font.render(text, True, color)
-        self.screen.blit(text_surface, (x, y))
-    
-    def draw_text_centered(self, text, font, color, y):
-        """指定Y座標の中央にテキストを描画"""
-        text_surface = font.render(text, True, color)
-        text_rect = text_surface.get_rect(center=(SCREEN_WIDTH / 2, y))
-        self.screen.blit(text_surface, text_rect)
-
-    def draw_title_scene(self):
-        self.screen.fill(DARK_BLUE)
-        # ロゴ(ダミー)
-        pygame.draw.rect(self.screen, (100,100,200), (SCREEN_WIDTH/2 - 100, 80, 200, 80))
-        self.draw_text_centered("ロゴ", self.font_l, WHITE, 120)
-        self.draw_text_centered("Click to Start", self.font_m, WHITE, 250)
-
-    def draw_quiz_base(self, quiz):
-        self.screen.fill(GREEN_BG)
-        # 問題表示エリア
-        pygame.draw.rect(self.screen, BLACK, (20, 20, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40))
-        # 問題文の描画
-        self.draw_text("もんだい", self.font_l, WHITE, 40, 40)
-        pygame.draw.line(self.screen, WHITE, (40, 90), (180, 90), 2)
+class TitleFrame(tk.Frame):
+    """タイトル画面"""
+    def __init__(self, master, controller, **kwargs):
+        super().__init__(master)
+        self.controller = controller
         
-        q_text = quiz["question"]
-        if isinstance(q_text, list): # 複数行の質問の場合
-            for i, line in enumerate(q_text):
-                self.draw_text(line, self.font_m, WHITE, 40, 110 + i * FONT_SIZE_M * 1.2)
-        else: # 1行の質問
-            self.draw_text(q_text, self.font_m, WHITE, 40, 110)
+        # --- UI改善: gridで中央配置 ---
+        self.grid_rowconfigure((0, 3), weight=1) # 上下の余白行
+        self.grid_columnconfigure(0, weight=1)   # 中央の列
 
-    def draw_choices(self, quiz, highlight=False):
-        y_start = 250
-        for i, choice in enumerate(quiz["choices"]):
-            if highlight and self.player_choice == i:
-                 # 選んだ選択肢をハイライト
-                pygame.draw.rect(self.screen, PURPLE_HIGHLIGHT, (35, y_start + i * 45 - 5, SCREEN_WIDTH - 70, FONT_SIZE_M + 10))
-            self.draw_text(choice, self.font_m, WHITE, 40, y_start + i * 45)
+        logo_label = tk.Label(self, text="ロゴ", font=controller.title_font, bg="lightblue", width=10, height=3)
+        logo_label.grid(row=0, column=0, pady=(20,0))
 
-    def draw_input_field(self, show_cursor=True):
-        self.draw_text("こたえ:", self.font_m, WHITE, 40, 280)
-        cursor = "_" if (pygame.time.get_ticks() % 1000 < 500 and show_cursor) else ""
-        self.draw_text(self.player_answer + cursor, self.font_m, WHITE, 180, 280)
+        title_label = tk.Label(self, text="Tkinter クイズゲーム", font=controller.title_font)
+        title_label.grid(row=1, column=0, pady=10)
 
-    def draw_result_message(self, quiz):
-        if self.is_correct:
-            self.draw_text_centered("★ せいかい！ ★", self.font_l, YELLOW, 350)
-        else:
-            self.draw_text_centered("＞ ざんねん…", self.font_l, RED, 350)
-            if quiz["type"] == "fill_in":
-                answer_text = f'せいかいは「{quiz["answer"]}」'
-                self.draw_text_centered(answer_text, self.font_s, WHITE, 390)
-        self.draw_text_centered("エンターキーでつぎへ", self.font_s, WHITE, SCREEN_HEIGHT - 30)
+        start_button = tk.Button(self, text="スタート", font=controller.default_font, width=15,
+                                 command=lambda: controller.switch_frame("QuizFrame"))
+        start_button.grid(row=2, column=0, pady=20)
 
-    # --- ヘルパー関数 (ロジック) ---
-    def check_choice_answer(self, selected_index):
-        self.player_choice = selected_index
-        quiz = QUIZ_DATA[self.current_quiz_index]
-        self.is_correct = (self.player_choice == quiz["correct_choice_index"])
-        self.scene = SCENE_RESULT
+
+class QuizFrame(tk.Frame):
+    """クイズ画面"""
+    def __init__(self, master, controller, **kwargs):
+        super().__init__(master)
+        self.controller = controller
+        self.grid_columnconfigure(0, weight=1)
+
+        quiz = QUIZ_DATA[controller.current_quiz_index]
         
-    def check_fill_in_answer(self):
-        quiz = QUIZ_DATA[self.current_quiz_index]
-        self.is_correct = (self.player_answer.lower() == quiz["answer"].lower())
-        self.scene = SCENE_RESULT
+        # --- UI改善: wraplengthでテキストを自動折り返し ---
+        question_label = tk.Label(self, text=quiz["question"], font=controller.question_font, 
+                                  wraplength=450, justify="left")
+        question_label.grid(row=0, column=0, pady=20, sticky="w")
 
-if __name__ == '__main__':
-    game = Game()
-    game.run()
+        if quiz["type"] == "choice":
+            for i, choice in enumerate(quiz["choices"]):
+                btn = tk.Button(self, text=choice, font=controller.default_font, 
+                                command=lambda choice_idx=i: self.check_choice_answer(choice_idx))
+                btn.grid(row=i+1, column=0, pady=5, sticky="ew") # sticky="ew"で横幅を合わせる
+        else: # "fill_in"
+            input_frame = tk.Frame(self)
+            input_frame.grid(row=1, column=0, pady=20, sticky="ew")
+            input_frame.grid_columnconfigure(1, weight=1)
+            
+            answer_label = tk.Label(input_frame, text="こたえ:", font=controller.default_font)
+            answer_label.grid(row=0, column=0)
+            
+            self.entry = tk.Entry(input_frame, font=controller.default_font)
+            self.entry.grid(row=0, column=1, padx=10, sticky="ew")
+            self.entry.bind("<Return>", self.check_fill_in_answer)
+            self.entry.focus_set() # 入力欄にフォーカスを合わせる
+
+            submit_button = tk.Button(self, text="決定", font=controller.default_font,
+                                      command=self.check_fill_in_answer)
+            submit_button.grid(row=2, column=0, pady=10)
+
+    def check_choice_answer(self, choice_index):
+        quiz = QUIZ_DATA[self.controller.current_quiz_index]
+        is_correct = (choice_index == quiz["correct_choice_index"])
+        if not is_correct:
+            self.controller.record_wrong_answer() # 不正解を記録
+        
+        result_info = {
+            "is_correct": is_correct,
+            "player_answer": quiz["choices"][choice_index],
+            "correct_answer_text": f'せいかいは: {quiz["choices"][quiz["correct_choice_index"]]}'
+        }
+        self.controller.switch_frame("ResultFrame", result_info=result_info)
+        
+    def check_fill_in_answer(self, event=None):
+        player_answer = self.entry.get()
+        quiz = QUIZ_DATA[self.controller.current_quiz_index]
+        is_correct = (player_answer.lower() == quiz["answer"].lower())
+        if not is_correct:
+            self.controller.record_wrong_answer() # 不正解を記録
+
+        result_info = {
+            "is_correct": is_correct,
+            "player_answer": player_answer,
+            "correct_answer_text": f'せいかいは: {quiz["answer"]}'
+        }
+        self.controller.switch_frame("ResultFrame", result_info=result_info)
+
+class ResultFrame(tk.Frame):
+    """各問題の結果表示画面"""
+    def __init__(self, master, controller, result_info, **kwargs):
+        super().__init__(master)
+        self.controller = controller
+        self.grid_rowconfigure((0, 4), weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        result_msg, result_color = ("★ せいかい！ ★", "green") if result_info["is_correct"] else ("＞ ざんねん…", "red")
+            
+        result_label = tk.Label(self, text=result_msg, font=controller.result_font, fg=result_color)
+        result_label.grid(row=0, column=0, pady=20)
+        
+        answer_label = tk.Label(self, text=f"あなたの回答: {result_info['player_answer']}", font=controller.default_font)
+        answer_label.grid(row=1, column=0, pady=10)
+        
+        if not result_info["is_correct"]:
+            correct_label = tk.Label(self, text=result_info["correct_answer_text"], font=controller.default_font)
+            correct_label.grid(row=2, column=0, pady=10)
+
+        next_button = tk.Button(self, text="次の問題へ", font=controller.default_font, width=15, command=controller.next_question)
+        next_button.grid(row=3, column=0, pady=20)
+
+
+class FinalResultFrame(tk.Frame):
+    """全問終了後の最終結果画面"""
+    def __init__(self, master, controller, **kwargs):
+        super().__init__(master)
+        self.controller = controller
+        self.grid_rowconfigure((0, 3), weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        total_questions = len(QUIZ_DATA)
+        wrong_answers = controller.wrong_answer_count
+
+        final_msg_label = tk.Label(self, text="クイズ終了！", font=controller.title_font)
+        final_msg_label.grid(row=0, column=0, pady=20)
+
+        score_text = f"全{total_questions}問中、不正解は {wrong_answers} 問でした。"
+        score_label = tk.Label(self, text=score_text, font=controller.question_font)
+        score_label.grid(row=1, column=0, pady=10)
+
+        exit_button = tk.Button(self, text="終了する", font=controller.default_font, width=15, command=self.controller.destroy)
+        exit_button.grid(row=2, column=0, pady=20)
+
+
+if __name__ == "__main__":
+    app = QuizApp()
+    app.mainloop()
