@@ -121,6 +121,11 @@ class QuizApp(tk.Tk):
         self.current_quiz_index = 0
         self.wrong_answer_count = 0 
 
+        # 選択されたジャンルと難易度を保持するための変数
+        self.selected_genre = None
+        self.selected_difficulty = None
+
+
         self._frame = None
         self.switch_frame("SelectionFrame") # 最初に表示するフレームを変更
 
@@ -134,7 +139,8 @@ class QuizApp(tk.Tk):
         self._frame = FrameClass(master=self, controller=self, **kwargs)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
-        self._frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        self._frame.grid(
+            row=0, column=0, sticky="nsew", padx=20, pady=20)
 
     def unbind_all_keys(self):
         """キー入力の衝突を避けるため、既存のキーバインドを全て解除する"""
@@ -142,12 +148,16 @@ class QuizApp(tk.Tk):
         for i in range(1, 10):
             self.unbind(f"<KeyPress-{i}>")
 
-    def start_quiz(self, genre, difficulty):
+    def start_quiz(self):
         """選択されたクイズを開始する"""
-        self.selected_quiz_data = ALL_QUIZZES[genre][difficulty]
-        self.current_quiz_index = 0
-        self.wrong_answer_count = 0
-        self.switch_frame("QuizFrame")
+        # start_quizが直接呼ばれる際には、controllerに保持されているジャンルと難易度を使用
+        if self.selected_genre and self.selected_difficulty:
+            self.selected_quiz_data = ALL_QUIZZES[self.selected_genre][self.selected_difficulty]
+            self.current_quiz_index = 0
+            self.wrong_answer_count = 0
+            self.switch_frame("QuizFrame")
+        else:
+            print("ジャンルと難易度が選択されていません。") # エラーハンドリング（必要であればGUIで表示）
 
     def next_question(self):
         """次の問題に進むか、最終結果を表示する"""
@@ -168,57 +178,90 @@ class SelectionFrame(tk.Frame):
         super().__init__(master)
         self.controller = controller
         
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(4, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=0) # タイトル行は伸縮させない
+        self.grid_rowconfigure(1, weight=1) # ジャンル・難易度表示エリアを伸縮させる
+        self.grid_rowconfigure(2, weight=0) # ボタン行は伸縮させない
 
         title_label = tk.Label(self, text="クイズのジャンルを選択", font=controller.title_font)
-        title_label.grid(row=0, column=0, columnspan=2, pady=20)
+        title_label.grid(row=0, column=0, pady=20)
 
-        # ジャンル選択
-        genre_label = tk.Label(self, text="ジャンル:", font=controller.default_font)
-        genre_label.grid(row=1, column=0, padx=(0, 10), pady=10, sticky="e")
-        
-        self.genre_var = tk.StringVar()
-        self.genres = list(ALL_QUIZZES.keys())
-        genre_menu = ttk.OptionMenu(self, self.genre_var, self.genres[0], *self.genres, command=self.update_difficulty_menu)
-        # genre_menu.config(width=25)  # <- 変更点: 固定幅の設定を削除
-        genre_menu.grid(row=1, column=1, pady=10, sticky="w")
+        # ジャンルボタンを配置するフレーム
+        self.genre_button_frame = tk.Frame(self)
+        self.genre_button_frame.grid(row=1, column=0, pady=10, sticky="nsew")
+        self.genre_button_frame.grid_columnconfigure(0, weight=1) # ボタンを中央に寄せるため
 
-        # 難易度選択
-        difficulty_label = tk.Label(self, text="難易度:", font=controller.default_font)
-        difficulty_label.grid(row=2, column=0, padx=(0, 10), pady=10, sticky="e")
+        # 難易度ボタンを配置するフレーム
+        self.difficulty_button_frame = tk.Frame(self)
+        # 最初は非表示
         
-        self.difficulty_var = tk.StringVar()
-        self.difficulty_menu = ttk.OptionMenu(self, self.difficulty_var, "")
-        # self.difficulty_menu.config(width=25) # <- 変更点: 固定幅の設定を削除
-        self.difficulty_menu.grid(row=2, column=1, pady=10, sticky="w")
-        
-        # スタートボタン
-        start_button = tk.Button(self, text="スタート", font=controller.default_font, width=15, command=self.start_quiz)
-        start_button.grid(row=3, column=0, columnspan=2, pady=30)
-        
-        # 初期状態で難易度メニューを更新
-        self.update_difficulty_menu()
+        self.create_genre_buttons()
 
-    def update_difficulty_menu(self, event=None):
-        """ジャンルの選択に応じて難易度メニューを更新する"""
-        selected_genre = self.genre_var.get()
-        difficulties = list(ALL_QUIZZES[selected_genre].keys())
+        # 戻るボタン
+        back_button = tk.Button(self, text="タイトルに戻る", font=controller.default_font, command=lambda: controller.switch_frame("SelectionFrame"))
+        # これは現状のSelectionFrameが最初の画面なので、意味がないが、他の画面からの遷移を考慮すると必要
+        # 今のコードではSelectionFrameからSelectionFrameへ戻ることはないので、このボタンは不要かもしれない
+        # 仮にこのボタンを残すなら、QuizAppのswitch_frameで引数を渡すように修正が必要
+        # back_button.grid(row=3, column=0, pady=10) # この行は削除またはコメントアウト
+
+    def create_genre_buttons(self):
+        """ジャンル選択ボタンを生成する"""
+        for widget in self.genre_button_frame.winfo_children():
+            widget.destroy() # 既存のボタンをクリア
+
+        row_idx = 0
+        for genre in ALL_QUIZZES.keys():
+            btn = tk.Button(self.genre_button_frame, text=genre, font=self.controller.default_font,
+                            width=30, command=lambda g=genre: self.show_difficulty_buttons(g))
+            btn.grid(row=row_idx, column=0, pady=5)
+            row_idx += 1
+            self.genre_button_frame.grid_rowconfigure(row_idx-1, weight=1) # 各行を均等に広げる
+
+    def show_difficulty_buttons(self, selected_genre):
+        """選択されたジャンルの難易度ボタンを表示する"""
+        self.controller.selected_genre = selected_genre # コントローラにジャンルを保存
+
+        # ジャンルボタンを非表示にする
+        self.genre_button_frame.grid_forget()
+
+        # 難易度ボタンフレームを表示
+        self.difficulty_button_frame.grid(row=1, column=0, pady=10, sticky="nsew")
+        self.difficulty_button_frame.grid_columnconfigure(0, weight=1)
+
+        # 既存の難易度ボタンをクリア
+        for widget in self.difficulty_button_frame.winfo_children():
+            widget.destroy()
+
+        # 難易度ボタンのタイトル
+        difficulty_title_label = tk.Label(self.difficulty_button_frame, text=f"{selected_genre} の難易度を選択", font=self.controller.question_font)
+        difficulty_title_label.grid(row=0, column=0, pady=10)
         
-        menu = self.difficulty_menu["menu"]
-        menu.delete(0, "end")
-        
+        row_idx = 1
+        difficulties = ALL_QUIZZES[selected_genre].keys()
         for difficulty in difficulties:
-            menu.add_command(label=difficulty, command=lambda value=difficulty: self.difficulty_var.set(value))
-            
-        self.difficulty_var.set(difficulties[0])
+            btn = tk.Button(self.difficulty_button_frame, text=difficulty, font=self.controller.default_font,
+                            width=30, command=lambda d=difficulty: self.start_selected_quiz(selected_genre, d))
+            btn.grid(row=row_idx, column=0, pady=5)
+            row_idx += 1
+            self.difficulty_button_frame.grid_rowconfigure(row_idx-1, weight=1) # 各行を均等に広げる
 
-    def start_quiz(self):
-        """選択された設定でクイズを開始する"""
-        genre = self.genre_var.get()
-        difficulty = self.difficulty_var.get()
-        if genre and difficulty:
-            self.controller.start_quiz(genre, difficulty)
+        # 戻るボタン（ジャンル選択に戻る）
+        back_to_genre_button = tk.Button(self.difficulty_button_frame, text="ジャンル選択に戻る", font=self.controller.default_font,
+                                          command=self.back_to_genre_selection)
+        back_to_genre_button.grid(row=row_idx, column=0, pady=20)
+        self.difficulty_button_frame.grid_rowconfigure(row_idx, weight=1)
+
+    def back_to_genre_selection(self):
+        """ジャンル選択画面に戻る"""
+        self.difficulty_button_frame.grid_forget() # 難易度ボタンフレームを非表示
+        self.create_genre_buttons() # ジャンルボタンを再生成して表示
+        self.genre_button_frame.grid(row=1, column=0, pady=10, sticky="nsew") # ジャンルフレームを表示
+
+    def start_selected_quiz(self, genre, difficulty):
+        """選択されたジャンルと難易度でクイズを開始する"""
+        self.controller.selected_genre = genre
+        self.controller.selected_difficulty = difficulty
+        self.controller.start_quiz()
 
 
 class QuizFrame(tk.Frame):
@@ -232,13 +275,13 @@ class QuizFrame(tk.Frame):
         quiz = self.controller.selected_quiz_data[controller.current_quiz_index]
         
         question_label = tk.Label(self, text=quiz["question"], font=controller.question_font, 
-                                   wraplength=450, justify="left")
+                                 wraplength=450, justify="left")
         question_label.grid(row=0, column=0, pady=20, sticky="w")
 
         if quiz["type"] == "choice":
             for i, choice in enumerate(quiz["choices"]):
                 btn = tk.Button(self, text=choice, font=controller.default_font, 
-                                command=lambda choice_idx=i: self.check_choice_answer(choice_idx))
+                                 command=lambda choice_idx=i: self.check_choice_answer(choice_idx))
                 btn.grid(row=i+1, column=0, pady=5, sticky="ew")
                 self.controller.bind(f"<KeyPress-{i+1}>", lambda event, choice_idx=i: self.check_choice_answer(choice_idx))
         else: # "fill_in"
